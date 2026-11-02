@@ -26,6 +26,8 @@ claude --plugin-dir claude-mods/code-colors
 
 **Keep it** the same way as any mod here: add its folder to `CLAUDE_CODE_PLUGIN_DIRS` (see jump-to-prompts below).
 
+**Pick your colors** in the [Code Colors Picker](https://claude.ai/artifact/8JgSoRUgy7AGviBTGUAh8e): every color slot, previewed by the mod's own code on your terminal's background. Copy the changes and paste them to Claude.
+
 ![The spinner's word in a rainbow while Claude thinks](code-colors/docs/rainbow.png)
 
 ### How it behaves
