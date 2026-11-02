@@ -1,6 +1,6 @@
 # claude-mods
 
-Mods for Claude Code's own interface. Each folder is one mod.
+Mods for Claude Code's own interface. Each folder is one mod. See them in action, with the rest of my Claude tools, in [Dup's Claude Tooling](https://claude.ai/artifact/4TU8kxNBRT9JqC3FTay9q5).
 
 | Mod | What it does |
 | :- | :- |
