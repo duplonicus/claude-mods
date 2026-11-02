@@ -1,0 +1,327 @@
+<title>Code Colors Picker</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@400;500;700&family=Ubuntu+Mono:ital,wght@0,400;0,700;1,400&display=swap">
+<style>
+  /* Layout: a column of color slots beside a sticky terminal preview drawn by the mod's own code; stacks on phones.
+     One deliberate dark look: it previews colors on a terminal background. */
+  :root {
+    --page: #160812;
+    --panel: #22101c;
+    --line: #3d2034;
+    --ink: #f3eaf0;
+    --muted: #b9a4b3;
+    --accent: #ffb454;
+    --accent-ink: #2a1206;
+    --ok: #3ee0b4;
+    --bad: #ff6b70;
+    --ui: "Ubuntu", "Segoe UI", system-ui, sans-serif;
+    --mono: "Ubuntu Mono", "Cascadia Mono", Consolas, monospace;
+    /* Claude Code's own greys and bullets, which the mod leaves to the theme (dark theme values). */
+    --cc-inactive: #999999;
+    --cc-success: #4eba65;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--page); color: var(--ink); font: 15px/1.5 var(--ui); }
+  .wrap {
+    max-width: 1280px; margin: 0 auto;
+    padding-block: 28px 40px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: 28px; align-items: start;
+  }
+  @media (max-width: 860px) { .wrap { grid-template-columns: minmax(0, 1fr); } }
+  h1 { font-size: 22px; margin: 0 0 4px; font-weight: 700; text-wrap: balance; }
+  .sub { margin: 0 0 18px; color: var(--muted); font-size: 14px; max-width: 60ch; }
+  .group { margin-top: 20px; }
+  .group-label { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 8px; display: block; }
+  .group-note { color: var(--muted); font-size: 13px; margin: -4px 0 8px; }
+  .rows { display: grid; gap: 6px; }
+  .row {
+    display: grid; grid-template-columns: 40px minmax(0, 1fr) 92px; align-items: center; gap: 10px;
+    padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+  }
+  .row.changed { border-color: var(--accent); }
+  .row input[type=color] { width: 40px; height: 30px; border: 0; padding: 0; background: none; cursor: pointer; }
+  .row .name b { display: block; font-weight: 500; }
+  .row .name small { color: var(--muted); font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+  .row input.hex {
+    width: 100%; font: 14px var(--mono); color: var(--ink); background: var(--page);
+    border: 1px solid var(--line); border-radius: 6px; padding: 5px 6px; text-transform: uppercase;
+  }
+  .row input.hex[aria-invalid=true] { border-color: var(--bad); }
+  input:focus-visible, button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  select {
+    width: 100%; font: inherit; color: var(--ink); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+  }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; align-items: center; }
+  button {
+    font: 500 14px var(--ui); padding: 9px 14px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink);
+  }
+  button.ghost { background: transparent; color: var(--accent); }
+  #status { color: var(--ok); font-size: 13px; min-height: 1.4em; }
+  #out {
+    margin-top: 10px; font: 13px/1.45 var(--mono); color: var(--ink); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 8px; padding: 10px; white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .note { color: var(--muted); font-size: 13px; margin-top: 8px; max-width: 70ch; }
+
+  .preview { min-width: 0; display: grid; gap: 18px; }
+  .preview > div { min-width: 0; }
+  @media (min-width: 861px) {
+    .preview { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); max-height: calc(100vh - 24px); overflow-y: auto; padding-right: 4px; }
+  }
+  .preview h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 8px; font-weight: 500; }
+  .term {
+    margin: 0; background: var(--t-bg); color: var(--t-text); border-radius: 10px;
+    padding: 16px 18px; font: 16px/1.45 var(--mono); overflow-x: auto;
+  }
+  .ln { white-space: pre-wrap; overflow-wrap: anywhere; min-height: 1.45em; }
+  .ln.rule { white-space: nowrap; overflow: hidden; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .chips button { padding: 5px 10px; font-size: 13px; background: var(--panel); color: var(--ink); border-color: var(--line); }
+  .chips button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+  /* Token and role colors come from the slots, set as variables on the preview. */
+  .k-keyword { color: var(--c-keyword); } .k-name { color: var(--c-name); } .k-type { color: var(--c-type); }
+  .k-function { color: var(--c-function); } .k-string { color: var(--c-string); } .k-number { color: var(--c-number); }
+  .k-comment { color: var(--c-comment); }
+  .p-bold { color: var(--p-bold); } .p-code { color: var(--p-code); } .p-link { color: var(--p-link); }
+  .p-marker { color: var(--p-marker); } .p-heading { color: var(--p-heading); }
+  .p-tldr { color: var(--p-tldr); } .p-needs { color: var(--p-needs); } .p-next { color: var(--p-next); }
+  .b { font-weight: 700; } .i { font-style: italic; } .s { text-decoration: line-through; }
+  .dim { color: var(--cc-inactive); } .bullet { color: var(--t-text); } .bullet-ok { color: var(--cc-success); }
+  .d-add { background: var(--d-add); } .d-remove { background: var(--d-remove); }
+  .w-add { background: var(--d-addWord); } .w-remove { background: var(--d-removeWord); }
+</style>
+
+<div class="wrap">
+  <section aria-labelledby="title">
+    <h1 id="title">Code Colors Picker</h1>
+    <p class="sub">Try colors for the <b>code-colors</b> mod on your own terminal background. Every preview is drawn by the mod's own code. When it looks right, copy the changes and paste them to Claude.</p>
+
+    <label class="group-label" for="preset">Code colors start from</label>
+    <select id="preset"></select>
+
+    <div id="groups"></div>
+
+    <div class="actions">
+      <button id="copy" type="button">Copy changes for Claude</button>
+      <button id="reset" class="ghost" type="button">Reset to the mod's colors</button>
+      <span id="status" role="status"></span>
+    </div>
+    <div id="out"></div>
+    <p class="note">The terminal colors only change this preview; set them in your terminal's own scheme. Grey text and bullets are Claude Code's own and follow its theme.</p>
+  </section>
+
+  <section class="preview" id="preview" aria-label="Preview">
+    <div><h2>A reply</h2><div class="term" id="reply"></div></div>
+    <div><h2>Bash and Fetch rows</h2><div class="term" id="tools"></div></div>
+    <div><h2>An edit</h2><div class="term" id="edit"></div></div>
+    <div>
+      <h2 id="lang-title">Every language</h2>
+      <div class="chips" id="chips" role="group" aria-labelledby="lang-title"></div>
+      <div class="term" id="lang"></div>
+    </div>
+  </section>
+</div>
+
+<script>
+const DATA = /*DATA*/null;
+
+const GROUPS = [
+  { key: 'term', label: 'Terminal (preview only)', slots: [
+    ['bg', 'Background', 'behind everything'],
+    ['text', 'Text', 'plain words, variables'],
+  ] },
+  { key: 'code', label: 'Code', note: 'Code blocks, Bash rows, grep results, diffs and printed Markdown.', slots: [
+    ['keyword', 'Keywords', 'const fn if return · Markdown bold'],
+    ['name', 'Names', 'class names · Markdown inline code'],
+    ['type', 'Types and keys', 'string bool · YAML keys'],
+    ['function', 'Functions', 'fetch() load() · Markdown links'],
+    ['string', 'Strings', '".iso" · Markdown fences'],
+    ['number', 'Numbers', '42 0.9 · Markdown headings'],
+    ['comment', 'Comments', '// # -- rem'],
+  ] },
+  { key: 'prose', label: 'Replies', note: 'Text between code blocks in Claude’s replies.', slots: [
+    ['tldr', 'TL;DR label', '**TL;DR** at a line start'],
+    ['needs', 'Needs you label', '**Needs you**'],
+    ['next', 'Next from me label', '**Next from me**'],
+    ['bold', 'Bold', '**any other bold**'],
+    ['code', 'Inline code', '`npm test`'],
+    ['link', 'Links', '[text](url), bare URLs'],
+    ['marker', 'List markers', '• and 1.'],
+    ['heading', 'Headings', '## Heading'],
+  ] },
+  { key: 'diff', label: 'Diffs', note: 'Backgrounds behind Edit and Write diffs and Bash file diffs.', slots: [
+    ['add', 'Added line', 'background'],
+    ['remove', 'Removed line', 'background'],
+    ['addWord', 'Added words', 'changed words, stronger'],
+    ['removeWord', 'Removed words', 'changed words, stronger'],
+  ] },
+];
+const PRESET_NAMES = { ubuntu: 'Ubuntu Readable (the mod’s now)', github: 'GitHub Dark', modern: 'VS Code Dark Modern', minimal: 'Minimal' };
+const TERM = { bg: '#300A24', text: '#FFFFFF' };
+const VAR = { term: 't', code: 'c', prose: 'p', diff: 'd' };
+
+const current = () => ({ term: { ...TERM }, code: { ...DATA.presets.ubuntu }, prose: { ...DATA.prose }, diff: { ...DATA.diff } });
+let colors = current();
+let preset = 'ubuntu';
+
+const STORE = 'code-colors-picker';
+function save() { try { localStorage.setItem(STORE, JSON.stringify({ colors, preset, lang })); } catch {} }
+function load() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE) || 'null');
+    if (!saved) return;
+    for (const g of GROUPS) for (const [key] of g.slots) {
+      const v = saved.colors?.[g.key]?.[key];
+      if (typeof v === 'string' && /^#[0-9A-F]{6}$/.test(v)) colors[g.key][key] = v;
+    }
+    if (DATA.presets[saved.preset]) preset = saved.preset;
+    if (DATA.languages.some(l => l.lang === saved.lang)) lang = saved.lang;
+  } catch {}
+}
+
+function drawLines(el, lines) {
+  el.textContent = '';
+  for (const line of lines) {
+    const div = document.createElement('div');
+    div.className = 'ln' + (line.c ? ' ' + line.c : '');
+    if (line.h) { div.style.paddingLeft = line.h + 'ch'; div.style.textIndent = -line.h + 'ch'; }
+    for (const [cls, text] of line.s) {
+      if (!cls) { div.append(text); continue; }
+      const span = document.createElement('span');
+      span.textContent = text;
+      const hex = /^hex:(#[0-9A-F]{6})( b)?$/.exec(cls);
+      if (hex) { span.style.color = hex[1]; if (hex[2]) span.className = 'b'; }
+      else span.className = cls;
+      div.append(span);
+    }
+    if (!line.s.some(([, t]) => t)) div.append(' ');
+    el.append(div);
+  }
+}
+
+function normalizeHex(value) {
+  const v = value.trim().replace(/^#?/, '#');
+  if (/^#[0-9a-f]{6}$/i.test(v)) return v.toUpperCase();
+  if (/^#[0-9a-f]{3}$/i.test(v)) return ('#' + v.slice(1).split('').map(c => c + c).join('')).toUpperCase();
+  return null;
+}
+
+function paint() {
+  const style = document.getElementById('preview').style;
+  for (const g of GROUPS) for (const [key] of g.slots) style.setProperty(`--${VAR[g.key]}-${key}`, colors[g.key][key]);
+  const base = current();
+  for (const g of GROUPS) for (const [key] of g.slots) {
+    document.getElementById(`row-${g.key}-${key}`).classList.toggle('changed', g.key !== 'term' && colors[g.key][key] !== base[g.key][key]);
+  }
+  document.getElementById('out').textContent = changesLine();
+  save();
+}
+
+function changesLine() {
+  const base = current();
+  const parts = [];
+  for (const g of GROUPS) {
+    if (g.key === 'term') continue;
+    const changed = g.slots.filter(([key]) => colors[g.key][key] !== base[g.key][key]).map(([key, label]) => `${label} ${colors[g.key][key]} (now ${base[g.key][key]})`);
+    if (changed.length) parts.push(`${g.label}: ${changed.join(', ')}`);
+  }
+  if (!parts.length) return 'No changes from the mod’s colors yet. Pick a color on the left to see it here.';
+  return `Change my code-colors mod colors. ${parts.join('. ')}. (Previewed on background ${colors.term.bg}.)`;
+}
+
+function buildRows() {
+  const box = document.getElementById('groups');
+  box.textContent = '';
+  for (const g of GROUPS) {
+    const group = document.createElement('div');
+    group.className = 'group';
+    const label = document.createElement('span');
+    label.className = 'group-label'; label.textContent = g.label;
+    group.append(label);
+    if (g.note) { const n = document.createElement('p'); n.className = 'group-note'; n.textContent = g.note; group.append(n); }
+    const rows = document.createElement('div');
+    rows.className = 'rows';
+    for (const [key, name, sample] of g.slots) {
+      const id = `${g.key}-${key}`;
+      const row = document.createElement('div');
+      row.className = 'row'; row.id = `row-${id}`;
+      const picker = document.createElement('input');
+      picker.type = 'color'; picker.id = `pick-${id}`; picker.value = colors[g.key][key].toLowerCase();
+      picker.setAttribute('aria-label', `${name} color`);
+      const nameEl = document.createElement('label');
+      nameEl.className = 'name'; nameEl.htmlFor = `hex-${id}`;
+      const b = document.createElement('b'); b.textContent = name;
+      const s = document.createElement('small'); s.textContent = sample;
+      nameEl.append(b, s);
+      const hex = document.createElement('input');
+      hex.className = 'hex'; hex.id = `hex-${id}`; hex.value = colors[g.key][key];
+      hex.spellcheck = false; hex.autocomplete = 'off'; hex.maxLength = 7;
+      picker.addEventListener('input', () => {
+        colors[g.key][key] = picker.value.toUpperCase(); hex.value = colors[g.key][key]; hex.removeAttribute('aria-invalid'); paint();
+      });
+      hex.addEventListener('input', () => {
+        const v = normalizeHex(hex.value);
+        if (!v) { hex.setAttribute('aria-invalid', 'true'); return; }
+        hex.removeAttribute('aria-invalid'); colors[g.key][key] = v; picker.value = v.toLowerCase(); paint();
+      });
+      hex.addEventListener('blur', () => { hex.value = colors[g.key][key]; hex.removeAttribute('aria-invalid'); });
+      row.append(picker, nameEl, hex);
+      rows.append(row);
+    }
+    group.append(rows);
+    box.append(group);
+  }
+  paint();
+}
+
+let lang = DATA.languages[0].lang;
+function showLang() {
+  const entry = DATA.languages.find(l => l.lang === lang);
+  drawLines(document.getElementById('lang'), entry.lines);
+  for (const b of document.querySelectorAll('#chips button')) b.setAttribute('aria-pressed', String(b.dataset.lang === lang));
+  save();
+}
+
+load();
+const select = document.getElementById('preset');
+for (const name of Object.keys(DATA.presets)) {
+  const opt = document.createElement('option'); opt.value = name; opt.textContent = PRESET_NAMES[name] || name; select.append(opt);
+}
+select.value = preset;
+select.addEventListener('change', () => { preset = select.value; colors.code = { ...DATA.presets[preset] }; buildRows(); });
+document.getElementById('reset').addEventListener('click', () => {
+  colors = current(); preset = 'ubuntu'; select.value = preset; buildRows(); setStatus('Back to the mod’s colors.');
+});
+
+function setStatus(text) { document.getElementById('status').textContent = text; }
+document.getElementById('copy').addEventListener('click', () => {
+  const text = changesLine();
+  const fallback = () => {
+    const range = document.createRange(); range.selectNodeContents(document.getElementById('out'));
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    setStatus('Selected below. Press Ctrl+C to copy.');
+  };
+  try { navigator.clipboard.writeText(text).then(() => setStatus('Copied. Paste it to Claude.'), fallback); } catch { fallback(); }
+});
+
+const chips = document.getElementById('chips');
+for (const l of DATA.languages) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.textContent = l.label; b.dataset.lang = l.lang; b.id = `chip-${l.lang}`;
+  b.addEventListener('click', () => { lang = l.lang; showLang(); });
+  chips.append(b);
+}
+
+drawLines(document.getElementById('reply'), DATA.scenes.reply);
+drawLines(document.getElementById('tools'), DATA.scenes.tools);
+drawLines(document.getElementById('edit'), DATA.scenes.edit);
+buildRows();
+showLang();
+</script>

@@ -1,0 +1,1 @@
+{ "name": "jump-to-prompts", "version": "0.4.1", "description": "Up and down buttons under the prompt box that scroll the conversation to your previous or next prompt, and a return button that presses Enter in the prompt box", "author": { "name": "duplonicus" }, "license": "MIT" }

@@ -1,0 +1,327 @@
+<title>Code Colors Picker</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@400;500;700&family=Ubuntu+Mono:ital,wght@0,400;0,700;1,400&display=swap">
+<style>
+  /* Layout: a column of color slots beside a sticky terminal preview drawn by the mod's own code; stacks on phones.
+     One deliberate dark look: it previews colors on a terminal background. */
+  :root {
+    --page: #160812;
+    --panel: #22101c;
+    --line: #3d2034;
+    --ink: #f3eaf0;
+    --muted: #b9a4b3;
+    --accent: #ffb454;
+    --accent-ink: #2a1206;
+    --ok: #3ee0b4;
+    --bad: #ff6b70;
+    --ui: "Ubuntu", "Segoe UI", system-ui, sans-serif;
+    --mono: "Ubuntu Mono", "Cascadia Mono", Consolas, monospace;
+    /* Claude Code's own greys and bullets, which the mod leaves to the theme (dark theme values). */
+    --cc-inactive: #999999;
+    --cc-success: #4eba65;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--page); color: var(--ink); font: 15px/1.5 var(--ui); }
+  .wrap {
+    max-width: 1280px; margin: 0 auto;
+    padding-block: 28px 40px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: 28px; align-items: start;
+  }
+  @media (max-width: 860px) { .wrap { grid-template-columns: minmax(0, 1fr); } }
+  h1 { font-size: 22px; margin: 0 0 4px; font-weight: 700; text-wrap: balance; }
+  .sub { margin: 0 0 18px; color: var(--muted); font-size: 14px; max-width: 60ch; }
+  .group { margin-top: 20px; }
+  .group-label { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 8px; display: block; }
+  .group-note { color: var(--muted); font-size: 13px; margin: -4px 0 8px; }
+  .rows { display: grid; gap: 6px; }
+  .row {
+    display: grid; grid-template-columns: 40px minmax(0, 1fr) 92px; align-items: center; gap: 10px;
+    padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+  }
+  .row.changed { border-color: var(--accent); }
+  .row input[type=color] { width: 40px; height: 30px; border: 0; padding: 0; background: none; cursor: pointer; }
+  .row .name b { display: block; font-weight: 500; }
+  .row .name small { color: var(--muted); font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+  .row input.hex {
+    width: 100%; font: 14px var(--mono); color: var(--ink); background: var(--page);
+    border: 1px solid var(--line); border-radius: 6px; padding: 5px 6px; text-transform: uppercase;
+  }
+  .row input.hex[aria-invalid=true] { border-color: var(--bad); }
+  input:focus-visible, button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  select {
+    width: 100%; font: inherit; color: var(--ink); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+  }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; align-items: center; }
+  button {
+    font: 500 14px var(--ui); padding: 9px 14px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink);
+  }
+  button.ghost { background: transparent; color: var(--accent); }
+  #status { color: var(--ok); font-size: 13px; min-height: 1.4em; }
+  #out {
+    margin-top: 10px; font: 13px/1.45 var(--mono); color: var(--ink); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 8px; padding: 10px; white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .note { color: var(--muted); font-size: 13px; margin-top: 8px; max-width: 70ch; }
+
+  .preview { min-width: 0; display: grid; gap: 18px; }
+  .preview > div { min-width: 0; }
+  @media (min-width: 861px) {
+    .preview { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); max-height: calc(100vh - 24px); overflow-y: auto; padding-right: 4px; }
+  }
+  .preview h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 8px; font-weight: 500; }
+  .term {
+    margin: 0; background: var(--t-bg); color: var(--t-text); border-radius: 10px;
+    padding: 16px 18px; font: 16px/1.45 var(--mono); overflow-x: auto;
+  }
+  .ln { white-space: pre-wrap; overflow-wrap: anywhere; min-height: 1.45em; }
+  .ln.rule { white-space: nowrap; overflow: hidden; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .chips button { padding: 5px 10px; font-size: 13px; background: var(--panel); color: var(--ink); border-color: var(--line); }
+  .chips button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+  /* Token and role colors come from the slots, set as variables on the preview. */
+  .k-keyword { color: var(--c-keyword); } .k-name { color: var(--c-name); } .k-type { color: var(--c-type); }
+  .k-function { color: var(--c-function); } .k-string { color: var(--c-string); } .k-number { color: var(--c-number); }
+  .k-comment { color: var(--c-comment); }
+  .p-bold { color: var(--p-bold); } .p-code { color: var(--p-code); } .p-link { color: var(--p-link); }
+  .p-marker { color: var(--p-marker); } .p-heading { color: var(--p-heading); }
+  .p-tldr { color: var(--p-tldr); } .p-needs { color: var(--p-needs); } .p-next { color: var(--p-next); }
+  .b { font-weight: 700; } .i { font-style: italic; } .s { text-decoration: line-through; }
+  .dim { color: var(--cc-inactive); } .bullet { color: var(--t-text); } .bullet-ok { color: var(--cc-success); }
+  .d-add { background: var(--d-add); } .d-remove { background: var(--d-remove); }
+  .w-add { background: var(--d-addWord); } .w-remove { background: var(--d-removeWord); }
+</style>
+
+<div class="wrap">
+  <section aria-labelledby="title">
+    <h1 id="title">Code Colors Picker</h1>
+    <p class="sub">Try colors for the <b>code-colors</b> mod on your own terminal background. Every preview is drawn by the mod's own code. When it looks right, copy the changes and paste them to Claude.</p>
+
+    <label class="group-label" for="preset">Code colors start from</label>
+    <select id="preset"></select>
+
+    <div id="groups"></div>
+
+    <div class="actions">
+      <button id="copy" type="button">Copy changes for Claude</button>
+      <button id="reset" class="ghost" type="button">Reset to the mod's colors</button>
+      <span id="status" role="status"></span>
+    </div>
+    <div id="out"></div>
+    <p class="note">The terminal colors only change this preview; set them in your terminal's own scheme. Grey text and bullets are Claude Code's own and follow its theme.</p>
+  </section>
+
+  <section class="preview" id="preview" aria-label="Preview">
+    <div><h2>A reply</h2><div class="term" id="reply"></div></div>
+    <div><h2>Bash and Fetch rows</h2><div class="term" id="tools"></div></div>
+    <div><h2>An edit</h2><div class="term" id="edit"></div></div>
+    <div>
+      <h2 id="lang-title">Every language</h2>
+      <div class="chips" id="chips" role="group" aria-labelledby="lang-title"></div>
+      <div class="term" id="lang"></div>
+    </div>
+  </section>
+</div>
+
+<script>
+const DATA = {"presets":{"ubuntu":{"keyword":"#FFB454","name":"#FF7A95","type":"#3EE0B4","function":"#68FDFA","string":"#E5484D","number":"#FFD08A","comment":"#26A269"},"github":{"keyword":"#FF7B72","name":"#FFA657","type":"#FFA657","function":"#D2A8FF","string":"#A5D6FF","number":"#79C0FF","comment":"#8B949E"},"modern":{"keyword":"#569CD6","name":"#4EC9B0","type":"#4EC9B0","function":"#DCDCAA","string":"#CE9178","number":"#B5CEA8","comment":"#6A9955"},"minimal":{"keyword":"#FF7B72","name":"#FFFFFF","type":"#FFFFFF","function":"#FFFFFF","string":"#A5D6FF","number":"#FFFFFF","comment":"#8B949E"}},"prose":{"bold":"#FFB454","code":"#FF7A95","link":"#5FD7D7","marker":"#FFD08A","heading":"#FFD08A","tldr":"#26A269","needs":"#E5484D","next":"#5FD7D7"},"diff":{"add":"#002800","remove":"#3F0001","addWord":"#003800","removeWord":"#670000"},"scenes":{"reply":[{"s":[["bullet","● "],["p-tldr b","TL;DR"],[""," — The picker now covers replies, Bash rows, grep, Fetch and all 16 languages. On "],["p-code","main"],["",", 53 tests pass."]],"h":2},{"s":[["","  "],["p-needs b","Needs you"],[""," — pick the label colors; the default stays "],["hex:#26A269","#26A269"],[""," unless you say otherwise."]],"h":2},{"s":[["","  "],["p-next b","Next from me"],[""," — publish it and link it in "],["p-link","ARTIFACTS.md"],["","."]],"h":2},{"s":[["",""]]},{"s":[["","  "],["dim","────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────"]],"c":"rule","h":2},{"s":[["",""]]},{"s":[["","  "],["p-heading b ","What changed"]],"h":2},{"s":[["",""]]},{"s":[["","  "],["","The mod draws "],["p-bold b","bold"],[""," in one color, "],["p-code","inline code"],[""," in another, and "],["i","italics"],[""," as italics."]],"h":2},{"s":[["","  "],["",""],["p-marker","• "],["","grep rows: prefixes dim, code in its file's language"]],"h":4},{"s":[["","  "],["",""],["p-marker","• "],["","Fetch pages: front matter as YAML, the rest as Markdown"]],"h":4},{"s":[["","  "],["","  "],["p-marker","• "],["","nested items keep their own marker"]],"h":6},{"s":[["","  "],["",""],["p-marker","1. "],["","numbered steps keep their number"]],"h":5},{"s":[["","  "],["",""],["p-marker","2. "],["","and wrapped lines hang under the text"]],"h":5},{"s":[["",""]]},{"s":[["","  "],["",""],["k-keyword","export"],["k-plain"," "],["k-keyword","async"],["k-plain"," "],["k-keyword","function"],["k-plain"," "],["k-function","load"],["k-punct","("],["k-plain","path"],["k-punct",":"],["k-plain"," "],["k-type","string"],["k-punct",")"],["k-punct",":"],["k-plain"," "],["k-name","Promise"],["k-punct","\u003c"],["k-name","FileItem"],["k-punct","["],["k-punct","]"],["k-punct",">"],["k-plain"," "],["k-punct","{"]],"h":2},{"s":[["","  "],["",""],["k-plain","  "],["k-keyword","const"],["k-plain"," res "],["k-punct","="],["k-plain"," "],["k-keyword","await"],["k-plain"," "],["k-function","fetch"],["k-punct","("],["k-string","`/api/files?path=${path}`"],["k-punct",")"]],"h":2},{"s":[["","  "],["",""],["k-plain","  "],["k-keyword","if"],["k-plain"," "],["k-punct","("],["k-plain","res"],["k-punct","."],["k-plain","status "],["k-punct","!"],["k-punct","="],["k-punct","="],["k-plain"," "],["k-number","200"],["k-punct",")"],["k-plain"," "],["k-keyword","return"],["k-plain"," "],["k-punct","["],["k-punct","]"],["k-plain"," "],["k-comment","// empty folder"]],"h":2},{"s":[["","  "],["",""],["k-plain","  "],["k-keyword","return"],["k-plain"," res"],["k-punct","."],["k-function","json"],["k-punct","("],["k-punct",")"]],"h":2},{"s":[["","  "],["",""],["k-punct","}"]],"h":2}],"tools":[{"s":[["bullet-ok","● "],["b","Bash"],["","("],["k-function","cd"],["k-plain"," ~/app "],["k-keyword","&&"],["k-plain"," "],["k-function","grep"],["k-plain"," "],["k-type","-rn"],["k-plain"," "],["k-string","\"fetch(\""],["k-plain"," src "],["k-keyword","|"],["k-plain"," "],["k-function","head"],["k-plain"," "],["k-type","-3"],["",")"]]},{"s":[["dim","  └  "],["dim","src/api.ts:2:"],["k-plain","  "],["k-keyword","const"],["k-plain"," res "],["k-punct","="],["k-plain"," "],["k-keyword","await"],["k-plain"," "],["k-function","fetch"],["k-punct","("],["k-string","`/api/files?path=${path}`"],["k-punct",")"]],"h":5},{"s":[["dim","     "],["dim","src/sync.py:14:"],["k-plain","    resp "],["k-punct","="],["k-plain"," "],["k-keyword","await"],["k-plain"," client"],["k-punct","."],["k-function","fetch"],["k-punct","("],["k-plain","url"],["k-punct",","],["k-plain"," timeout"],["k-punct","="],["k-number","30"],["k-punct",")"]],"h":5},{"s":[["dim","     "],["dim","src/db.sql:8:"],["k-keyword","SELECT"],["k-plain"," id"],["k-punct",","],["k-plain"," name "],["k-keyword","FROM"],["k-plain"," files "],["k-keyword","WHERE"],["k-plain"," path "],["k-punct","="],["k-plain"," $"],["k-number","1"],["k-punct",";"]],"h":5},{"s":[["bullet-ok","● "],["b","Bash"],["","("],["k-function","sed"],["k-plain"," "],["k-type","-n"],["k-plain"," 1,3p src/api.ts"],["k-keyword",";"],["k-plain"," "],["k-function","cat"],["k-plain"," NOTES.md"],["",")"]]},{"s":[["dim","  └  "],["",""],["k-keyword","export"],["k-plain"," "],["k-keyword","async"],["k-plain"," "],["k-keyword","function"],["k-plain"," "],["k-function","load"],["k-punct","("],["k-plain","path"],["k-punct",":"],["k-plain"," "],["k-type","string"],["k-punct",")"],["k-plain"," "],["k-punct","{"]],"h":5},{"s":[["dim","     "],["",""],["k-plain","  "],["k-keyword","const"],["k-plain"," res "],["k-punct","="],["k-plain"," "],["k-keyword","await"],["k-plain"," "],["k-function","fetch"],["k-punct","("],["k-string","`/api/files?path=${path}`"],["k-punct",")"]],"h":5},{"s":[["dim","     "],["",""],["k-plain","  "],["k-keyword","if"],["k-plain"," "],["k-punct","("],["k-plain","res"],["k-punct","."],["k-plain","status "],["k-punct","!"],["k-punct","="],["k-punct","="],["k-plain"," "],["k-number","200"],["k-punct",")"],["k-plain"," "],["k-keyword","return"],["k-plain"," "],["k-punct","["],["k-punct","]"]],"h":5},{"s":[["dim","     "],["",""],["k-number","# Release notes"]],"h":5},{"s":[["dim","     "],["",""],["k-plain","Bold is "],["k-keyword","**orange**"],["k-plain",", inline code is "],["k-name","`pink`"],["k-plain",", links go "],["k-function","[here](https://example.com)"],["k-plain","."]],"h":5},{"s":[["dim","     "],["",""],["k-number","-"],["k-plain"," one line per change"]],"h":5},{"s":[["bullet-ok","● "],["b","Bash"],["","("],["k-function","python3"],["k-plain"," - "],["k-punct","\u003c\u003c"],["k-string","'EOF'"]]},{"s":[["","  "],["k-keyword","import"],["k-plain"," json"],["k-punct",","],["k-plain"," pathlib"]]},{"s":[["","  "],["k-function","print"],["k-punct","("],["k-function","len"],["k-punct","("],["k-plain","json"],["k-punct","."],["k-function","loads"],["k-punct","("],["k-plain","pathlib"],["k-punct","."],["k-name","Path"],["k-punct","("],["k-string","\"data.json\""],["k-punct",")"],["k-punct","."],["k-function","read_text"],["k-punct","("],["k-punct",")"],["k-punct",")"],["k-punct",")"],["k-punct",")"]]},{"s":[["","  "],["","EOF"],["",")"]]},{"s":[["dim","  └  "],["","412"]],"h":5},{"s":[["bullet-ok","● "],["b","Fetch"],["","("],["","url: \"https://learn.microsoft.com/…/renew-your-subscription\""],["",")"]]},{"s":[["dim","  └  "],["","Received "],["b","6.7KB"],[""," (200 OK)"]]},{"s":[["",""],["k-punct","---"]]},{"s":[["",""],["k-type","title"],["k-plain",": Manage recurring billing"]]},{"s":[["",""],["k-type","ms.date"],["k-plain",": "],["k-number","2026"],["k-number","-09"],["k-number","-03"]]},{"s":[["",""],["k-type","recommendations"],["k-plain",": "],["k-keyword","false"]]},{"s":[["",""],["k-punct","---"]]},{"s":[["",""]]},{"s":[["",""],["k-number","# Manage recurring billing"]]},{"s":[["",""],["k-number","1."],["k-plain"," Go to the "],["k-keyword","**Billing**"],["k-plain"," page and select "],["k-name","`Edit recurring billing`"],["k-plain","."]]}],"edit":[{"s":[["bullet-ok","● "],["b","Update"],["","("],["b","src/api.ts"],["",")"]]},{"s":[["dim","  └  "],["","Added 2 lines, removed 1 line"]]},{"s":[["","      "],["dim","12   "],["k-keyword","export"],["k-plain"," "],["k-keyword","async"],["k-plain"," "],["k-keyword","function"],["k-plain"," "],["k-function","load"],["k-punct","("],["k-plain","path"],["k-punct",":"],["k-plain"," "],["k-type","string"],["k-punct",")"],["k-plain"," "],["k-punct","{"]]},{"c":"d-remove","s":[["","      "],["dim","13 - "],["k-plain","  "],["k-keyword","const"],["k-plain"," "],["k-plain","res"],["k-plain"," "],["k-punct","="],["k-plain"," "],["k-keyword","await"],["k-plain"," "],["k-function","fetch"],["k-punct","("],["k-string changed w-remove","`/files?path=${path}`"],["k-punct",")"]]},{"c":"d-add","s":[["","      "],["dim","13 + "],["k-plain","  "],["k-keyword","const"],["k-plain"," "],["k-plain","res"],["k-plain"," "],["k-punct","="],["k-plain"," "],["k-keyword","await"],["k-plain"," "],["k-function","fetch"],["k-punct","("],["k-string changed w-add","`/api/files?path=${encodeURIComponent(path)}`"],["k-punct",")"]]},{"c":"d-add","s":[["","      "],["dim","14 + "],["k-plain","  "],["k-comment","// a missing folder answers 404"]]},{"s":[["","      "],["dim","15   "],["k-plain","  "],["k-keyword","if"],["k-plain"," "],["k-punct","("],["k-plain","res"],["k-punct","."],["k-plain","status "],["k-punct","!"],["k-punct","="],["k-punct","="],["k-plain"," "],["k-number","200"],["k-punct",")"],["k-plain"," "],["k-keyword","return"],["k-plain"," "],["k-punct","["],["k-punct","]"]]},{"s":[["","      "],["dim","16   "],["k-plain","  "],["k-keyword","return"],["k-plain"," res"],["k-punct","."],["k-function","json"],["k-punct","("],["k-punct",")"]]}]},"languages":[{"lang":"ts","label":"TypeScript","lines":[{"s":[["",""],["k-keyword","interface"],["k-plain"," "],["k-name","FileItem"],["k-plain"," "],["k-punct","{"],["k-plain"," name"],["k-punct",":"],["k-plain"," "],["k-type","string"],["k-punct",";"],["k-plain"," size"],["k-punct","?"],["k-punct",":"],["k-plain"," "],["k-type","number"],["k-plain"," "],["k-punct","}"]]},{"s":[["",""],["k-keyword","export"],["k-plain"," "],["k-keyword","const"],["k-plain"," isIso "],["k-punct","="],["k-plain"," "],["k-punct","("],["k-plain","f"],["k-punct",":"],["k-plain"," "],["k-name","FileItem"],["k-punct",")"],["k-punct",":"],["k-plain"," "],["k-type","boolean"],["k-plain"," "],["k-punct","="],["k-punct",">"],["k-plain"," f"],["k-punct","."],["k-plain","name"],["k-punct","."],["k-function","endsWith"],["k-punct","("],["k-string","'.iso'"],["k-punct",")"]]},{"s":[["",""],["k-keyword","const"],["k-plain"," "],["k-name","MAX"],["k-plain"," "],["k-punct","="],["k-plain"," "],["k-number","300"],["k-plain"," "],["k-comment","// lines colored before plain"]]}]},{"lang":"python","label":"Python","lines":[{"s":[["",""],["k-function","@dataclass"]]},{"s":[["",""],["k-keyword","class"],["k-plain"," "],["k-name","FileItem"],["k-punct",":"]]},{"s":[["",""],["k-plain","    name"],["k-punct",":"],["k-plain"," "],["k-type","str"]]},{"s":[["",""],["k-plain","    size"],["k-punct",":"],["k-plain"," "],["k-type","int"],["k-plain"," "],["k-punct","|"],["k-plain"," "],["k-keyword","None"],["k-plain"," "],["k-punct","="],["k-plain"," "],["k-keyword","None"],["k-plain","  "],["k-comment","# bytes"]]},{"s":[["",""]]},{"s":[["",""],["k-plain","    "],["k-keyword","def"],["k-plain"," "],["k-function","is_iso"],["k-punct","("],["k-keyword","self"],["k-punct",")"],["k-plain"," "],["k-punct","-"],["k-punct",">"],["k-plain"," "],["k-type","bool"],["k-punct",":"]]},{"s":[["",""],["k-plain","        "],["k-keyword","return"],["k-plain"," "],["k-keyword","self"],["k-punct","."],["k-plain","name"],["k-punct","."],["k-function","lower"],["k-punct","("],["k-punct",")"],["k-punct","."],["k-function","endswith"],["k-punct","("],["k-string","\".iso\""],["k-punct",")"]]}]},{"lang":"rust","label":"Rust","lines":[{"s":[["",""],["k-keyword","pub"],["k-plain"," "],["k-keyword","struct"],["k-plain"," "],["k-name","FileItem"],["k-plain"," "],["k-punct","{"],["k-plain"," "],["k-keyword","pub"],["k-plain"," name"],["k-punct",":"],["k-plain"," "],["k-type","String"],["k-punct",","],["k-plain"," "],["k-keyword","pub"],["k-plain"," size"],["k-punct",":"],["k-plain"," "],["k-type","Option"],["k-punct","\u003c"],["k-type","u64"],["k-punct",">"],["k-plain"," "],["k-punct","}"]]},{"s":[["",""]]},{"s":[["",""],["k-keyword","impl"],["k-plain"," "],["k-name","FileItem"],["k-plain"," "],["k-punct","{"]]},{"s":[["",""],["k-plain","    "],["k-keyword","fn"],["k-plain"," "],["k-function","is_iso"],["k-punct","("],["k-punct","&"],["k-keyword","self"],["k-punct",")"],["k-plain"," "],["k-punct","-"],["k-punct",">"],["k-plain"," "],["k-type","bool"],["k-plain"," "],["k-punct","{"],["k-plain"," "],["k-keyword","self"],["k-punct","."],["k-plain","name"],["k-punct","."],["k-function","ends_with"],["k-punct","("],["k-string","\".iso\""],["k-punct",")"],["k-plain"," "],["k-punct","}"],["k-plain"," "],["k-comment","// case-sensitive"]]},{"s":[["",""],["k-punct","}"]]}]},{"lang":"bash","label":"Bash","lines":[{"s":[["",""],["k-keyword","for"],["k-plain"," f in ~/dev/*/NOW.md"],["k-keyword",";"],["k-plain"," "],["k-keyword","do"]]},{"s":[["",""],["k-plain","  "],["k-function","["],["k-plain"," "],["k-type","-s"],["k-plain"," "],["k-string","\"$f\""],["k-plain"," ] "],["k-keyword","&&"],["k-plain"," "],["k-function","echo"],["k-plain"," "],["k-string","\"$(basename \""],["k-punct","$("],["k-function","dirname"],["k-plain"," "],["k-string","\"$f\""],["k-punct",")"],["k-string","\"): $(wc -l \u003c \""],["k-name","$f"],["k-string","\") lines\""]]},{"s":[["",""],["k-keyword","done"],["k-plain"," "],["k-comment","# 2>/dev/null"]]}]},{"lang":"sql","label":"SQL","lines":[{"s":[["",""],["k-comment","-- files changed this week"]]},{"s":[["",""],["k-keyword","SELECT"],["k-plain"," path"],["k-punct",","],["k-plain"," COUNT"],["k-punct","("],["k-punct","*"],["k-punct",")"],["k-plain"," "],["k-keyword","AS"],["k-plain"," edits"]]},{"s":[["",""],["k-keyword","FROM"],["k-plain"," changes "],["k-keyword","WHERE"],["k-plain"," at "],["k-punct",">"],["k-plain"," NOW"],["k-punct","("],["k-punct",")"],["k-plain"," "],["k-punct","-"],["k-plain"," "],["k-type","INTERVAL"],["k-plain"," "],["k-string","'7 days'"]]},{"s":[["",""],["k-keyword","GROUP"],["k-plain"," "],["k-keyword","BY"],["k-plain"," path "],["k-keyword","ORDER"],["k-plain"," "],["k-keyword","BY"],["k-plain"," edits "],["k-keyword","DESC"],["k-plain"," "],["k-keyword","LIMIT"],["k-plain"," "],["k-number","10"],["k-punct",";"]]}]},{"lang":"surql","label":"SurrealQL","lines":[{"s":[["",""],["k-comment","-- open threads past their review date"]]},{"s":[["",""],["k-keyword","SELECT"],["k-plain"," "],["k-type","text"],["k-punct",","],["k-plain"," project "],["k-keyword","FROM"],["k-plain"," entry"]]},{"s":[["",""],["k-keyword","WHERE"],["k-plain"," kind "],["k-punct","="],["k-plain"," "],["k-string","'thread'"],["k-plain"," "],["k-keyword","AND"],["k-plain"," review_by "],["k-punct","\u003c"],["k-plain"," "],["k-function","time::now"],["k-punct","("],["k-punct",")"]]},{"s":[["",""],["k-keyword","FETCH"],["k-plain"," project"],["k-punct",";"]]}]},{"lang":"powershell","label":"PowerShell","lines":[{"s":[["",""],["k-comment","# register the nightly task"]]},{"s":[["",""],["k-name","$action"],["k-plain"," "],["k-punct","="],["k-plain"," "],["k-function","New-ScheduledTaskAction"],["k-plain"," "],["k-type","-Execute"],["k-plain"," "],["k-string","'pwsh.exe'"],["k-plain"," "],["k-type","-Argument"],["k-plain"," "],["k-string","'-File C:\\jobs\\nightly.ps1'"]]},{"s":[["",""],["k-function","Register-ScheduledTask"],["k-plain"," "],["k-type","-TaskName"],["k-plain"," "],["k-string","'Nightly'"],["k-plain"," "],["k-type","-Action"],["k-plain"," "],["k-name","$action"],["k-plain"," "],["k-type","-Force"],["k-plain"," "],["k-punct","|"],["k-plain"," "],["k-function","Out-Null"]]}]},{"lang":"batch","label":"Batch","lines":[{"s":[["",""],["k-punct","@"],["k-keyword","echo"],["k-plain"," off"]]},{"s":[["",""],["k-comment","rem copy the build to the share"]]},{"s":[["",""],["k-keyword","for"],["k-plain"," "],["k-name","%%"],["k-plain","f "],["k-keyword","in"],["k-plain"," "],["k-punct","("],["k-plain","dist\\*.zip"],["k-punct",")"],["k-plain"," "],["k-keyword","do"],["k-plain"," copy "],["k-type","/y"],["k-plain"," "],["k-string","\"%%f\""],["k-plain"," \\\\nas\\builds\\"]]},{"s":[["",""],["k-keyword","if"],["k-plain"," "],["k-keyword","errorlevel"],["k-plain"," 1 "],["k-keyword","exit"],["k-plain"," "],["k-type","/b"],["k-plain"," 1"]]}]},{"lang":"c","label":"C / C++","lines":[{"s":[["",""],["k-keyword","#include"],["k-plain"," "],["k-punct","\u003c"],["k-plain","stdio"],["k-punct","."],["k-plain","h"],["k-punct",">"]]},{"s":[["",""],["k-comment","// count lines on stdin"]]},{"s":[["",""],["k-type","int"],["k-plain"," "],["k-function","main"],["k-punct","("],["k-type","void"],["k-punct",")"],["k-plain"," "],["k-punct","{"]]},{"s":[["",""],["k-plain","    "],["k-type","int"],["k-plain"," c"],["k-punct",","],["k-plain"," n "],["k-punct","="],["k-plain"," "],["k-number","0"],["k-punct",";"]]},{"s":[["",""],["k-plain","    "],["k-keyword","while"],["k-plain"," "],["k-punct","("],["k-punct","("],["k-plain","c "],["k-punct","="],["k-plain"," "],["k-function","getchar"],["k-punct","("],["k-punct",")"],["k-punct",")"],["k-plain"," "],["k-punct","!"],["k-punct","="],["k-plain"," "],["k-name","EOF"],["k-punct",")"],["k-plain"," "],["k-keyword","if"],["k-plain"," "],["k-punct","("],["k-plain","c "],["k-punct","="],["k-punct","="],["k-plain"," "],["k-string","'\\n'"],["k-punct",")"],["k-plain"," n"],["k-punct","+"],["k-punct","+"],["k-punct",";"]]},{"s":[["",""],["k-plain","    "],["k-function","printf"],["k-punct","("],["k-string","\"%d\\n\""],["k-punct",","],["k-plain"," n"],["k-punct",")"],["k-punct",";"]]},{"s":[["",""],["k-plain","    "],["k-keyword","return"],["k-plain"," "],["k-number","0"],["k-punct",";"]]},{"s":[["",""],["k-punct","}"]]}]},{"lang":"hcl","label":"Terraform","lines":[{"s":[["",""],["k-keyword","resource"],["k-plain"," "],["k-string","\"aws_s3_bucket\""],["k-plain"," "],["k-string","\"backups\""],["k-plain"," "],["k-punct","{"]]},{"s":[["",""],["k-plain","  bucket "],["k-punct","="],["k-plain"," "],["k-string","\"demo-backups\""]]},{"s":[["",""],["k-plain","  "],["k-comment","# keep 30 days of versions"]]},{"s":[["",""],["k-plain","  lifecycle_rule "],["k-punct","{"],["k-plain"," enabled "],["k-punct","="],["k-plain"," "],["k-keyword","true"],["k-plain"," "],["k-punct","}"]]},{"s":[["",""],["k-punct","}"]]}]},{"lang":"yaml","label":"YAML","lines":[{"s":[["",""],["k-type","services"],["k-plain",":"]]},{"s":[["",""],["k-plain","  "],["k-type","ollama"],["k-plain",":"]]},{"s":[["",""],["k-plain","    "],["k-type","image"],["k-plain",": ollama/ollama:"],["k-number","0.5"],["k-plain","."],["k-number","4"],["k-plain","  "],["k-comment","# pinned"]]},{"s":[["",""],["k-plain","    "],["k-type","ports"],["k-plain",": ["],["k-string","\"11434:11434\""],["k-plain","]"]]},{"s":[["",""],["k-plain","    "],["k-type","restart"],["k-plain",": unless-stopped"]]}]},{"lang":"ini","label":"TOML / INI","lines":[{"s":[["",""],["k-keyword","[project]"]]},{"s":[["",""],["k-type","name"],["k-plain"," = "],["k-string","\"demo-helper\""]]},{"s":[["",""],["k-type","version"],["k-plain"," = "],["k-string","\"0.4.2\""]]},{"s":[["",""],["k-type","requires-python"],["k-plain"," = "],["k-string","\">=3.12\""],["k-plain","  # uv picks it up"]]}]},{"lang":"json","label":"JSON","lines":[{"s":[["",""],["k-punct","{"]]},{"s":[["",""],["k-plain","  "],["k-type","\"name\""],["k-punct",":"],["k-plain"," "],["k-string","\"code-colors\""],["k-punct",","]]},{"s":[["",""],["k-plain","  "],["k-type","\"version\""],["k-punct",":"],["k-plain"," "],["k-string","\"0.9.0\""],["k-punct",","]]},{"s":[["",""],["k-plain","  "],["k-type","\"private\""],["k-punct",":"],["k-plain"," "],["k-keyword","true"],["k-punct",","]]},{"s":[["",""],["k-plain","  "],["k-type","\"languages\""],["k-punct",":"],["k-plain"," "],["k-number","16"]]},{"s":[["",""],["k-punct","}"]]}]},{"lang":"markdown","label":"Markdown","lines":[{"s":[["",""],["k-number","## Next"]]},{"s":[["",""],["k-number","-"],["k-plain"," flip the repo "],["k-keyword","**public**"],["k-plain"," after the review"]]},{"s":[["",""],["k-number","-"],["k-plain"," run "],["k-name","`claude plugin test`"],["k-plain"," before pushing"]]},{"s":[["",""],["k-comment","> see [NOW.md](NOW.md)"]]}]},{"lang":"html","label":"HTML","lines":[{"s":[["",""],["k-comment","\u003c!-- the picker's preview -->"]]},{"s":[["",""],["k-keyword","\u003cpre"],["k-plain"," "],["k-type","class"],["k-plain","="],["k-string","\"term\""],["k-plain"," "],["k-type","id"],["k-plain","="],["k-string","\"reply\""],["k-plain"," "],["k-type","aria-label"],["k-plain","="],["k-string","\"Reply preview\""],["k-punct",">"],["k-keyword","\u003c/pre"],["k-punct",">"]]},{"s":[["",""],["k-keyword","\u003cbutton"],["k-plain"," "],["k-type","type"],["k-plain","="],["k-string","\"button\""],["k-plain"," "],["k-type","class"],["k-plain","="],["k-string","\"ghost\""],["k-punct",">"],["k-plain","Reset"],["k-keyword","\u003c/button"],["k-punct",">"]]}]},{"lang":"css","label":"CSS","lines":[{"s":[["",""],["k-plain",":root { "],["k-name","--term-bg"],["k-plain",": "],["k-number","#300A24"],["k-plain","; }"]]},{"s":[["",""],["k-plain","pre.term {"]]},{"s":[["",""],["k-plain","  "],["k-type","background"],["k-plain",": "],["k-function","var"],["k-plain","("],["k-name","--term-bg"],["k-plain",");"]]},{"s":[["",""],["k-plain","  "],["k-type","font"],["k-plain",": "],["k-number","17px"],["k-plain","/"],["k-number","1.5"],["k-plain"," "],["k-string","\"Ubuntu Mono\""],["k-plain",", monospace;"]]},{"s":[["",""],["k-plain","}"]]}]}]};
+
+const GROUPS = [
+  { key: 'term', label: 'Terminal (preview only)', slots: [
+    ['bg', 'Background', 'behind everything'],
+    ['text', 'Text', 'plain words, variables'],
+  ] },
+  { key: 'code', label: 'Code', note: 'Code blocks, Bash rows, grep results, diffs and printed Markdown.', slots: [
+    ['keyword', 'Keywords', 'const fn if return · Markdown bold'],
+    ['name', 'Names', 'class names · Markdown inline code'],
+    ['type', 'Types and keys', 'string bool · YAML keys'],
+    ['function', 'Functions', 'fetch() load() · Markdown links'],
+    ['string', 'Strings', '".iso" · Markdown fences'],
+    ['number', 'Numbers', '42 0.9 · Markdown headings'],
+    ['comment', 'Comments', '// # -- rem'],
+  ] },
+  { key: 'prose', label: 'Replies', note: 'Text between code blocks in Claude’s replies.', slots: [
+    ['tldr', 'TL;DR label', '**TL;DR** at a line start'],
+    ['needs', 'Needs you label', '**Needs you**'],
+    ['next', 'Next from me label', '**Next from me**'],
+    ['bold', 'Bold', '**any other bold**'],
+    ['code', 'Inline code', '`npm test`'],
+    ['link', 'Links', '[text](url), bare URLs'],
+    ['marker', 'List markers', '• and 1.'],
+    ['heading', 'Headings', '## Heading'],
+  ] },
+  { key: 'diff', label: 'Diffs', note: 'Backgrounds behind Edit and Write diffs and Bash file diffs.', slots: [
+    ['add', 'Added line', 'background'],
+    ['remove', 'Removed line', 'background'],
+    ['addWord', 'Added words', 'changed words, stronger'],
+    ['removeWord', 'Removed words', 'changed words, stronger'],
+  ] },
+];
+const PRESET_NAMES = { ubuntu: 'Ubuntu Readable (the mod’s now)', github: 'GitHub Dark', modern: 'VS Code Dark Modern', minimal: 'Minimal' };
+const TERM = { bg: '#300A24', text: '#FFFFFF' };
+const VAR = { term: 't', code: 'c', prose: 'p', diff: 'd' };
+
+const current = () => ({ term: { ...TERM }, code: { ...DATA.presets.ubuntu }, prose: { ...DATA.prose }, diff: { ...DATA.diff } });
+let colors = current();
+let preset = 'ubuntu';
+
+const STORE = 'code-colors-picker';
+function save() { try { localStorage.setItem(STORE, JSON.stringify({ colors, preset, lang })); } catch {} }
+function load() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE) || 'null');
+    if (!saved) return;
+    for (const g of GROUPS) for (const [key] of g.slots) {
+      const v = saved.colors?.[g.key]?.[key];
+      if (typeof v === 'string' && /^#[0-9A-F]{6}$/.test(v)) colors[g.key][key] = v;
+    }
+    if (DATA.presets[saved.preset]) preset = saved.preset;
+    if (DATA.languages.some(l => l.lang === saved.lang)) lang = saved.lang;
+  } catch {}
+}
+
+function drawLines(el, lines) {
+  el.textContent = '';
+  for (const line of lines) {
+    const div = document.createElement('div');
+    div.className = 'ln' + (line.c ? ' ' + line.c : '');
+    if (line.h) { div.style.paddingLeft = line.h + 'ch'; div.style.textIndent = -line.h + 'ch'; }
+    for (const [cls, text] of line.s) {
+      if (!cls) { div.append(text); continue; }
+      const span = document.createElement('span');
+      span.textContent = text;
+      const hex = /^hex:(#[0-9A-F]{6})( b)?$/.exec(cls);
+      if (hex) { span.style.color = hex[1]; if (hex[2]) span.className = 'b'; }
+      else span.className = cls;
+      div.append(span);
+    }
+    if (!line.s.some(([, t]) => t)) div.append(' ');
+    el.append(div);
+  }
+}
+
+function normalizeHex(value) {
+  const v = value.trim().replace(/^#?/, '#');
+  if (/^#[0-9a-f]{6}$/i.test(v)) return v.toUpperCase();
+  if (/^#[0-9a-f]{3}$/i.test(v)) return ('#' + v.slice(1).split('').map(c => c + c).join('')).toUpperCase();
+  return null;
+}
+
+function paint() {
+  const style = document.getElementById('preview').style;
+  for (const g of GROUPS) for (const [key] of g.slots) style.setProperty(`--${VAR[g.key]}-${key}`, colors[g.key][key]);
+  const base = current();
+  for (const g of GROUPS) for (const [key] of g.slots) {
+    document.getElementById(`row-${g.key}-${key}`).classList.toggle('changed', g.key !== 'term' && colors[g.key][key] !== base[g.key][key]);
+  }
+  document.getElementById('out').textContent = changesLine();
+  save();
+}
+
+function changesLine() {
+  const base = current();
+  const parts = [];
+  for (const g of GROUPS) {
+    if (g.key === 'term') continue;
+    const changed = g.slots.filter(([key]) => colors[g.key][key] !== base[g.key][key]).map(([key, label]) => `${label} ${colors[g.key][key]} (now ${base[g.key][key]})`);
+    if (changed.length) parts.push(`${g.label}: ${changed.join(', ')}`);
+  }
+  if (!parts.length) return 'No changes from the mod’s colors yet. Pick a color on the left to see it here.';
+  return `Change my code-colors mod colors. ${parts.join('. ')}. (Previewed on background ${colors.term.bg}.)`;
+}
+
+function buildRows() {
+  const box = document.getElementById('groups');
+  box.textContent = '';
+  for (const g of GROUPS) {
+    const group = document.createElement('div');
+    group.className = 'group';
+    const label = document.createElement('span');
+    label.className = 'group-label'; label.textContent = g.label;
+    group.append(label);
+    if (g.note) { const n = document.createElement('p'); n.className = 'group-note'; n.textContent = g.note; group.append(n); }
+    const rows = document.createElement('div');
+    rows.className = 'rows';
+    for (const [key, name, sample] of g.slots) {
+      const id = `${g.key}-${key}`;
+      const row = document.createElement('div');
+      row.className = 'row'; row.id = `row-${id}`;
+      const picker = document.createElement('input');
+      picker.type = 'color'; picker.id = `pick-${id}`; picker.value = colors[g.key][key].toLowerCase();
+      picker.setAttribute('aria-label', `${name} color`);
+      const nameEl = document.createElement('label');
+      nameEl.className = 'name'; nameEl.htmlFor = `hex-${id}`;
+      const b = document.createElement('b'); b.textContent = name;
+      const s = document.createElement('small'); s.textContent = sample;
+      nameEl.append(b, s);
+      const hex = document.createElement('input');
+      hex.className = 'hex'; hex.id = `hex-${id}`; hex.value = colors[g.key][key];
+      hex.spellcheck = false; hex.autocomplete = 'off'; hex.maxLength = 7;
+      picker.addEventListener('input', () => {
+        colors[g.key][key] = picker.value.toUpperCase(); hex.value = colors[g.key][key]; hex.removeAttribute('aria-invalid'); paint();
+      });
+      hex.addEventListener('input', () => {
+        const v = normalizeHex(hex.value);
+        if (!v) { hex.setAttribute('aria-invalid', 'true'); return; }
+        hex.removeAttribute('aria-invalid'); colors[g.key][key] = v; picker.value = v.toLowerCase(); paint();
+      });
+      hex.addEventListener('blur', () => { hex.value = colors[g.key][key]; hex.removeAttribute('aria-invalid'); });
+      row.append(picker, nameEl, hex);
+      rows.append(row);
+    }
+    group.append(rows);
+    box.append(group);
+  }
+  paint();
+}
+
+let lang = DATA.languages[0].lang;
+function showLang() {
+  const entry = DATA.languages.find(l => l.lang === lang);
+  drawLines(document.getElementById('lang'), entry.lines);
+  for (const b of document.querySelectorAll('#chips button')) b.setAttribute('aria-pressed', String(b.dataset.lang === lang));
+  save();
+}
+
+load();
+const select = document.getElementById('preset');
+for (const name of Object.keys(DATA.presets)) {
+  const opt = document.createElement('option'); opt.value = name; opt.textContent = PRESET_NAMES[name] || name; select.append(opt);
+}
+select.value = preset;
+select.addEventListener('change', () => { preset = select.value; colors.code = { ...DATA.presets[preset] }; buildRows(); });
+document.getElementById('reset').addEventListener('click', () => {
+  colors = current(); preset = 'ubuntu'; select.value = preset; buildRows(); setStatus('Back to the mod’s colors.');
+});
+
+function setStatus(text) { document.getElementById('status').textContent = text; }
+document.getElementById('copy').addEventListener('click', () => {
+  const text = changesLine();
+  const fallback = () => {
+    const range = document.createRange(); range.selectNodeContents(document.getElementById('out'));
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    setStatus('Selected below. Press Ctrl+C to copy.');
+  };
+  try { navigator.clipboard.writeText(text).then(() => setStatus('Copied. Paste it to Claude.'), fallback); } catch { fallback(); }
+});
+
+const chips = document.getElementById('chips');
+for (const l of DATA.languages) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.textContent = l.label; b.dataset.lang = l.lang; b.id = `chip-${l.lang}`;
+  b.addEventListener('click', () => { lang = l.lang; showLang(); });
+  chips.append(b);
+}
+
+drawLines(document.getElementById('reply'), DATA.scenes.reply);
+drawLines(document.getElementById('tools'), DATA.scenes.tools);
+drawLines(document.getElementById('edit'), DATA.scenes.edit);
+buildRows();
+showLang();
+</script>
