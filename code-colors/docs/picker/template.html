@@ -32,6 +32,7 @@
     display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: 28px; align-items: start;
   }
   @media (max-width: 860px) { .wrap { grid-template-columns: minmax(0, 1fr); } }
+  .back { display: inline-block; margin: 0 0 10px; color: var(--accent); font-size: 14px; }
   h1 { font-size: 22px; margin: 0 0 4px; font-weight: 700; text-wrap: balance; }
   .sub { margin: 0 0 18px; color: var(--muted); font-size: 14px; max-width: 60ch; }
   .group { margin-top: 20px; }
@@ -100,6 +101,7 @@
 
 <div class="wrap">
   <section aria-labelledby="title">
+    <a class="back" href="https://claude.ai/artifact/4TU8kxNBRT9JqC3FTay9q5">← Dup's Claude Tooling</a>
     <h1 id="title">Code Colors Picker</h1>
     <p class="sub">Try colors for the <b>code-colors</b> mod on your own terminal background. Every preview is drawn by the mod's own code. When it looks right, copy the changes and paste them to Claude.</p>
 
