@@ -64,6 +64,7 @@ claude --plugin-dir claude-mods/jump-to-prompts
 
 ### How it behaves
 
+- ↩ shows from the start. ▲ ▼ appear once you've sent a prompt, so a new session looks like it has only ↩.
 - The buttons sit at the right end of the row under the prompt box, beside the status line when there is room. With [claude-statusline](https://github.com/duplonicus/claude-statusline), which saves its row widths for the mod to read, a window too narrow for that moves them to the right end of the permission-mode line; with any other status line, or when that line is full too, they go to a row of their own at the bottom.
 - On the permission-mode line the mod draws the line itself while the buttons are on it, so its pills are plain text then. A mod isn't told the permission mode, so room is counted for the longest label: in modes other than bypass permissions the buttons sit a few cells short of the right end.
 - What counts as a prompt: what you typed, including slash commands and prompts sent while Claude was working. Not: auto-run skills, task notifications, "Request interrupted" lines.
