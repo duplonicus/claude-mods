@@ -4,12 +4,12 @@ Mods for Claude Code's own interface. Each folder is one mod. See them in action
 
 | Mod | What it does |
 | :- | :- |
-| [`code-colors`](code-colors) | Syntax colors for code blocks, reply prose, Edit/Write diffs, Bash rows and Fetch results, with your own palette |
+| [`code-colors`](code-colors) | Syntax colors for code blocks, reply prose, Edit/Write diffs, Bash rows, Fetch and MCP tool results, with your own palette |
 | [`jump-to-prompts`](jump-to-prompts) | ↩ ▲ ▼ buttons under the prompt box. ▲ ▼ scroll the conversation to your previous or next prompt, ↩ presses Enter in the prompt box |
 
 ## code-colors
 
-Claude Code's token colors are fixed per theme. code-colors draws code with its own palette instead: code blocks in replies, Edit/Write diffs, Bash rows (the command, heredoc bodies, all output: printed code files and grep/rg results in each file's language, in chains too, diffs and JSON as such, anything else by its shape; the diff of files a command changed) and Fetch results (Markdown, front matter, JSON). Reply prose gets colors too: bold, inline code, links, headings, list markers and hex codes.
+Claude Code's token colors are fixed per theme. code-colors draws code with its own palette instead: code blocks in replies, Edit/Write diffs, Bash rows (the command, heredoc bodies, all output: printed code files and grep/rg results in each file's language, in chains too, diffs and JSON as such, anything else by its shape; the diff of files a command changed) Fetch results (Markdown, front matter, JSON) and MCP tool results (JSON laid out, text after it by its shape). Reply prose gets colors too: bold, inline code, links, headings, list markers and hex codes.
 
 ![Bash rows: the command, a printed Python file, and a heredoc body in their own colors](code-colors/docs/bash-rows.png)
 

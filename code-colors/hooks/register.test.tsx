@@ -219,6 +219,66 @@ test('a command edit to a text file is in the output colors too', () => {
   expect(added && 'tokens' in added ? added.tokens[0]?.kind : undefined).toBe('string')
 })
 
+const DOCS_READ = [
+  { type: 'text', text: '<artifact-content-authored-by-others/>\nThis result includes Artifact content.' },
+  { type: 'text', text: '{"verdict":"allow","rev":392}\n\nThis doc takes suggestions.' },
+]
+
+test('an MCP result in full is ours: a gutter per block, the JSON in the palette', async ($, on) => {
+  engine(on)
+  const below = await $.ui.mount(result('toolu_m', 'mcp__claude_ai_Claude_Docs__read', DOCS_READ))
+  expect(await below.find({ type: 'Text', text: /engine/ })).toBeUndefined()
+  expect((await below.find({ type: 'Text', text: /^"allow"$/ }))?.props.color).toBeDefined()
+  expect((await below.find({ type: 'Text', text: /^392$/ }))?.props.color).toBeDefined()
+  expect((await below.findAll({ type: 'Text', text: /⎿/ })).length).toBe(2)
+  await below.unmount()
+})
+
+test("a grouped MCP row keeps the engine's header, drawn from an emptied result, and draws the blocks under it", async ($, on) => {
+  const seen: unknown[] = []
+  on('ui.render', ($, e) => {
+    seen.push((e.props as { output?: unknown }).output)
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+  const parent = await $.ui.mount(group('toolu_mg'))
+  await parent.unmount()
+  const mcpRow = (id: string, extra: object) =>
+    ({ plugin: PLUGIN, component: 'ToolUse', requestId: id, surface: 'terminal', props: { tool_use_id: id, tool: 'mcp__claude_ai_Claude_Docs__read', input: {}, isRunning: false, isErrored: false, isInterrupted: false, isExpanded: true, output: DOCS_READ, ...extra } }) as const
+  const row = await $.ui.mount(mcpRow('toolu_mg', {}))
+  expect((await row.findAll({ type: 'Text', text: /^engine$/ })).length).toBe(1)
+  expect(seen.at(-1)).toEqual([])
+  expect((await row.find({ type: 'Text', text: /^"allow"$/ }))?.props.color).toBeDefined()
+  expect((await row.findAll({ type: 'Text', text: /⎿/ })).length).toBe(2)
+  await row.unmount()
+  // ctrl+o draws a ToolResult for the same call: it stays empty, not a second copy.
+  const below = await $.ui.mount(result('toolu_mg', 'mcp__claude_ai_Claude_Docs__read', DOCS_READ))
+  expect(await below.find({ type: 'Text', text: /⎿/ })).toBeUndefined()
+  expect(await below.find({ type: 'Text', text: /allow/ })).toBeUndefined()
+  await below.unmount()
+  // Still running, interrupted, or regular mode: the engine's row, its result untouched.
+  for (const extra of [{ isRunning: true, output: undefined }, { isInterrupted: true, output: 'Interrupted by user' }, { isExpanded: false }]) {
+    const other = await $.ui.mount(mcpRow('toolu_mg', extra))
+    expect(await other.find({ type: 'Text', text: /⎿/ })).toBeUndefined()
+    await other.unmount()
+  }
+})
+
+test("an MCP result in regular mode, errored or with an image, and a built-in tool's, stay the engine's", async ($, on) => {
+  engine(on)
+  const cases = [
+    { ...result('toolu_r', 'mcp__claude_ai_Claude_Docs__read', DOCS_READ), props: { ...result('toolu_r', 'mcp__claude_ai_Claude_Docs__read', DOCS_READ).props, isExpanded: false } },
+    { ...result('toolu_e', 'mcp__claude_ai_Claude_Docs__read', DOCS_READ), props: { ...result('toolu_e', 'mcp__claude_ai_Claude_Docs__read', DOCS_READ).props, isErrored: true } },
+    result('toolu_i', 'mcp__claude-in-chrome__computer', [{ type: 'image', data: 'x', mimeType: 'image/png' }, ...DOCS_READ]),
+    result('toolu_t', 'TaskOutput', '{"a":1}'),
+  ]
+  for (const props of cases) {
+    const below = await $.ui.mount(props)
+    expect((await below.find({ type: 'Text', text: /engine/ }))?.text).toBe('engine')
+    await below.unmount()
+  }
+})
+
 test("a Bash row the mod leaves keeps the engine's ToolResult", async ($, on) => {
   engine(on)
   const running = bash('toolu_b', 'sleep 9')
@@ -262,6 +322,19 @@ test('a standalone Edit keeps the engine header and draws its diff once, in the 
   const below = await $.ui.mount(result('toolu_c', 'Edit', EDIT_OUTPUT))
   expect(await below.find({ type: 'Text', text: /engine/ })).toBeUndefined()
   expect((await below.find({ type: 'Text', text: /^Added/ }))?.text).toBe('Added 1 line, removed 1 line')
+  await below.unmount()
+})
+
+test('a grouped Edit draws its diff inline, and its ctrl+o ToolResult stays empty, not a second copy', async ($, on) => {
+  engine(on)
+  const parent = await $.ui.mount(group('toolu_ge'))
+  await parent.unmount()
+  const props = { tool_use_id: 'toolu_ge', tool: 'Edit', input: {}, isRunning: false, isErrored: false, isInterrupted: false, isExpanded: true, output: EDIT_OUTPUT }
+  const row = await $.ui.mount({ plugin: PLUGIN, component: 'ToolUse', requestId: 'toolu_ge', surface: 'terminal', props })
+  expect(await row.find({ type: 'Text', text: /^Added/ })).toBeDefined()
+  await row.unmount()
+  const below = await $.ui.mount(result('toolu_ge', 'Edit', EDIT_OUTPUT))
+  expect(await below.find({ type: 'Text', text: /^Added|engine/ })).toBeUndefined()
   await below.unmount()
 })
 

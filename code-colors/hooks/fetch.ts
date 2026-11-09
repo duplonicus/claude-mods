@@ -24,10 +24,9 @@ export function fetchSpans(text: string): OutputSpan[] | undefined {
   return capped([{ lang: 'yaml', text: front[0] }, ...(page ? [{ lang: 'markdown' as const, text: page }] : [])])
 }
 
-/** Past MAX_COLORED_LINES the rest is plain: a long page must not stall a redraw. */
-function capped(spans: OutputSpan[]): OutputSpan[] {
+/** Past `left` lines (MAX_COLORED_LINES unless given) the rest is plain: a long page must not stall a redraw. */
+export function capped(spans: OutputSpan[], left = MAX_COLORED_LINES): OutputSpan[] {
   const out: OutputSpan[] = []
-  let left = MAX_COLORED_LINES
   for (const span of spans) {
     const lines = span.text.split('\n')
     if (lines.length <= left) {

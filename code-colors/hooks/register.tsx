@@ -1,10 +1,11 @@
-import type { ElementTable, Register, RenderNode } from 'claude-code'
+import type { ElementTable, Register, RenderElement, RenderNode } from 'claude-code'
 
 import { CHANGED_WORD_TINT, DIFF_TINT, diffRows, readNewFile, readPatch, shownPath, summarize, type DiffRow, type NewFile } from './diff'
 import { DEFAULT_PALETTE, PALETTE, PALETTES, splitFences, tokenize, toLines, type Lang, type PaletteName, type Token } from './highlight'
 import { fileLang } from './languages'
 import { LABEL_COLORS, leadLabel, luminance, PROSE, proseBlocks, type Inline, type ProseBlock, type Row } from './prose'
 import { fetchSpans } from './fetch'
+import { mcpBlocks } from './mcp'
 import type { Part } from './running'
 import { glyphs } from './spinner'
 import { ThoughtMeter } from './thinking'
@@ -54,6 +55,8 @@ const grouped = new Set<string>()
 const bashDrawnWhole = new Set<string>()
 // The same for a new file's Write row drawn whole in a group.
 const newFileDrawnWhole = new Set<string>()
+// The same for a grouped Edit diff or MCP result drawn inline under the engine's header.
+const resultDrawnInline = new Set<string>()
 // A mixed command's output cut into its printed files' spans, by tool_use_id
 // (null: none found). Read once, so a file changed later doesn't uncolor the row.
 const mixedSpans = new Map<string, OutputSpan[] | null>()
@@ -99,7 +102,7 @@ const RAINBOW_KEY = 'thinking-rainbow'
 // A spinner is drawn under its agent's id; one with no thinking of its own counted is the session's.
 const agentOf = (requestId: string) => (thoughts.has(requestId) ? requestId : MAIN_AGENT)
 
-// CODE_COLORS_DEBUG=<file> appends one JSON line per Edit or Write row drawn: which hook saw it and what it held. Off when unset.
+// CODE_COLORS_DEBUG=<file> appends one JSON line per Edit, Write or MCP row drawn: which hook saw it and what it held. Off when unset.
 const debugLines: string[] = []
 async function debug($: { env: { get: (name: string) => Promise<string | undefined> }; fs: { write: (path: string, text: string) => Promise<void> } }, entry: () => unknown) {
   try {
@@ -355,7 +358,7 @@ export const register: Register = on => {
   // A grouped Edit/Write row draws its result inline: the diff is drawn here,
   // under the engine's header and its emptied result line.
   on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
-    if (FILE_EDIT_TOOLS.has(e.props.tool)) await debug($, () => ({ at: 'ToolUse', tool: e.props.tool, id: e.props.tool_use_id, surface: e.surface, isExpanded: e.props.isExpanded, isRunning: e.props.isRunning, isErrored: e.props.isErrored, grouped: grouped.has(e.props.tool_use_id), output: outputShape(e.props.output) }))
+    if (traced(e.props.tool)) await debug($, () => ({ at: 'ToolUse', tool: e.props.tool, id: e.props.tool_use_id, surface: e.surface, isExpanded: e.props.isExpanded, isRunning: e.props.isRunning, isErrored: e.props.isErrored, grouped: grouped.has(e.props.tool_use_id), output: outputShape(e.props.output) }))
     if (e.surface !== 'terminal' || e.props.isErrored || !FILE_EDIT_TOOLS.has(e.props.tool)) return next(e)
     if (!grouped.has(e.props.tool_use_id)) return next(e) // its result is a ToolResult, below
     // A new file in a group (a Write into the session's own scratchpad, seen in a capture): the engine
@@ -390,6 +393,7 @@ export const register: Register = on => {
     // The engine draws the header from an output with no patch; its result row is then left empty.
     const output = { ...(e.props.output as Record<string, unknown>), structuredPatch: [] }
     const engineRow = await next({ ...e, props: { ...e.props, output } })
+    resultDrawnInline.add(e.props.tool_use_id)
 
     return (
       <Box flexDirection="column">
@@ -407,6 +411,25 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // A grouped MCP row draws its result inline (every MCP row seen in a probe was
+  // grouped): the engine draws the header, whose title no prop carries, from an
+  // emptied result, and the blocks are drawn under it.
+  on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
+    if (e.surface !== 'terminal' || !e.props.tool.startsWith('mcp__') || e.props.isErrored || e.props.isInterrupted || e.props.isRunning || e.props.isExpanded !== true) return next(e)
+    if (!grouped.has(e.props.tool_use_id)) return next(e) // its result is a ToolResult, below
+    const blocks = mcpBlocks(e.props.output)
+    if (!blocks) return next(e)
+    const { Box } = $.ui.resolve(e)
+    const header = await next({ ...e, props: { ...e.props, output: [] } })
+    resultDrawnInline.add(e.props.tool_use_id)
+    return (
+      <Box flexDirection="column">
+        {header}
+        {mcpGutters($.ui.resolve(e), blocks)}
+      </Box>
+    )
+  }).catch(($, e, next) => next(e))
+
   on('ui.render', { component: 'ToolResult', props: { tool: 'Bash' } }, async ($, e, next) => {
     if (e.surface !== 'terminal' || !bashDrawnWhole.has(e.props.tool_use_id)) return next(e)
     const { Box } = $.ui.resolve(e)
@@ -416,10 +439,11 @@ export const register: Register = on => {
   // A standalone Edit/Write row (not in a group) draws its result here: the
   // summary line and the diff, in place of the engine's.
   on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
-    if (FILE_EDIT_TOOLS.has(e.props.tool)) await debug($, () => ({ at: 'ToolResult', tool: e.props.tool, id: e.props.tool_use_id, surface: e.surface, isExpanded: e.props.isExpanded, isErrored: e.props.isErrored, output: outputShape(e.props.output) }))
+    if (traced(e.props.tool)) await debug($, () => ({ at: 'ToolResult', tool: e.props.tool, id: e.props.tool_use_id, surface: e.surface, isExpanded: e.props.isExpanded, isErrored: e.props.isErrored, output: outputShape(e.props.output) }))
     if (e.surface !== 'terminal' || e.props.isErrored || !FILE_EDIT_TOOLS.has(e.props.tool)) return next(e)
     const { Box, Text, Link } = $.ui.resolve(e)
-    if (newFileDrawnWhole.has(e.props.tool_use_id)) return <Box />
+    // Drawn already in its grouped row: ctrl+o raises this ToolResult for it too.
+    if (newFileDrawnWhole.has(e.props.tool_use_id) || resultDrawnInline.has(e.props.tool_use_id)) return <Box />
     // A new file has no patch: its lines, numbered, under the engine's "Wrote" line.
     const created = e.props.tool === 'Write' ? readNewFile(e.props.output, e.props.isExpanded === true) : undefined
     if (created) {
@@ -466,9 +490,40 @@ export const register: Register = on => {
       </Box>
     )
   }).catch(($, e, next) => next(e))
+
+  // An MCP tool's result in full (claude.ai connectors and local servers): each
+  // text block under its own `⎿`, a leading JSON value laid out and colored, the
+  // text after it as output. Regular mode's cut-down result stays the engine's.
+  on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
+    if (e.surface !== 'terminal' || e.props.isErrored || e.props.isExpanded !== true || !e.props.tool.startsWith('mcp__')) return next(e)
+    const blocks = mcpBlocks(e.props.output)
+    if (!blocks) return next(e)
+    const { Box } = $.ui.resolve(e)
+    if (resultDrawnInline.has(e.props.tool_use_id)) return <Box /> // its grouped row drew it; ctrl+o raises this too
+    // The engine draws no gutter around a ToolResult a hook answers: it is drawn here.
+    return mcpGutters($.ui.resolve(e), blocks)
+  }).catch(($, e, next) => next(e))
+}
+
+/** An MCP result's text blocks, each under its own `⎿`, as the engine draws them. */
+function mcpGutters({ Box, Text }: Pick<ElementTable<'terminal'>, 'Box' | 'Text'>, blocks: readonly (readonly OutputSpan[])[]): RenderElement {
+  return (
+    <Box flexDirection="column">
+      {blocks.map(spans => (
+        <Box flexDirection="row">
+          <Text color={RESULT_GUTTER_COLOR}>{RESULT_GUTTER}</Text>
+          <Box flexDirection="column" flexShrink={1}>
+            {spanLines(Text, spans)}
+          </Box>
+        </Box>
+      ))}
+    </Box>
+  )
 }
 
 const FILE_EDIT_TOOLS = new Set(['Edit', 'Write'])
+/** The rows CODE_COLORS_DEBUG logs: Edit, Write and MCP tools. */
+const traced = (tool: string) => FILE_EDIT_TOOLS.has(tool) || tool.startsWith('mcp__')
 
 /** A piece of a command as the running row's surface module takes it: plain data, in the palette's colors. */
 function commandParts(part: { text: string; lang?: Lang }): Part[] {
@@ -501,7 +556,7 @@ function spanLines(Text: ElementTable<'terminal'>['Text'], spans: readonly Outpu
 const fileUrl = (path: string) => `file://${encodeURI(path).replace(/[?#]/g, encodeURIComponent)}`
 
 /** A new file's `⎿` block: the engine's "Wrote" line, then its lines, numbered. */
-function newFileBlock({ Box, Text, Link }: Pick<ElementTable<'terminal'>, 'Box' | 'Text' | 'Link'>, created: NewFile, path: string): RenderNode {
+function newFileBlock({ Box, Text, Link }: Pick<ElementTable<'terminal'>, 'Box' | 'Text' | 'Link'>, created: NewFile, path: string): RenderElement {
   const width = String(created.rows.length).length
   return (
     <Box flexDirection="row">
