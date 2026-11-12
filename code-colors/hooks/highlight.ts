@@ -110,6 +110,17 @@ function matchAt(source: string, at: number, lang: Lang): Token {
   return { kind: 'plain', text: source.charAt(at) }
 }
 
+// A line past this is drawn plain: a minified file on one line must not stall a redraw. The lexers named
+// here cost in step with a line's length (100,000 chars: under 25 ms each); for every other one the cost
+// grows with the square (batch: 9 s for the same line), so those, and any language not measured yet, keep
+// the short limit. Measured with tools/line-cost.ts.
+export const MAX_COLORED_LINE = 100_000
+export const MAX_SLOW_COLORED_LINE = 2000
+const LINEAR_LEXERS: ReadonlySet<Lang> = new Set<Lang>(['output', 'json', 'ini', 'yaml', 'diff', 'python', 'rust', 'sql', 'hcl', 'surql', 'c'])
+
+/** Whether a line is short enough to color in this language. */
+export const colorsLine = (line: string, lang: Lang): boolean => line.length <= (LINEAR_LEXERS.has(lang) ? MAX_COLORED_LINE : MAX_SLOW_COLORED_LINE)
+
 /** Tokens in source order; joined, their texts are `source` exactly. */
 export function tokenize(source: string, lang: Lang): Token[] {
   const tokens: Token[] = []

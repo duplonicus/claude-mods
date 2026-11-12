@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
-import { DEFAULT_PALETTE, PALETTES, splitFences, tokenize } from './highlight'
+import { colorsLine, DEFAULT_PALETTE, MAX_COLORED_LINE, MAX_SLOW_COLORED_LINE, PALETTES, splitFences, tokenize } from './highlight'
+import { LANGUAGES, type Lang } from './languages'
 
 const kindOf = (source: string, lang: 'rust' | 'python', word: string) =>
   tokenize(source, lang).find(token => token.text === word)?.kind
@@ -53,4 +54,20 @@ test('an empty fence closes on the next line and pairs with nothing later', () =
 test('an unclosed fence stays prose, and a tag named like an Object method is no language', () => {
   expect(shape('```\nstreaming')).toEqual(['prose:```\nstreaming'])
   expect(shape('```constructor\nx\n```')).toEqual(['prose:```constructor\nx\n```'])
+})
+
+test('a long line is colored up to its language\'s limit, and every language has one', () => {
+  const short = 'x'.repeat(MAX_SLOW_COLORED_LINE)
+  const long = 'x'.repeat(MAX_COLORED_LINE)
+  for (const lang of Object.keys(LANGUAGES) as Lang[]) {
+    expect(colorsLine(short, lang)).toBe(true)
+    expect(colorsLine(`${long}x`, lang)).toBe(false)
+    // One or the other limit, nothing between: a language is measured as fast or it keeps the short one.
+    expect(colorsLine(`${short}x`, lang)).toBe(colorsLine(long, lang))
+  }
+  // What a command prints, and the TOML and JSON it prints, take the long limit; shell and Markdown do not.
+  for (const lang of ['output', 'ini', 'json', 'yaml', 'diff'] as const) expect(colorsLine(long, lang)).toBe(true)
+  for (const lang of ['bash', 'markdown', 'ts', 'batch', 'powershell', 'html', 'css'] as const) expect(colorsLine(`${short}x`, lang)).toBe(false)
+  // Colored at the limit, the text is still all there.
+  expect(tokenize(long, 'output').map(token => token.text).join('')).toBe(long)
 })

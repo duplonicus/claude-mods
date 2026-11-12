@@ -35,7 +35,7 @@ claude --plugin-dir claude-mods/code-colors
 - Palettes are constants at the top of `hooks/highlight.ts`, prose colors in `hooks/prose.ts`, diff tints in `hooks/diff.ts`.
 - While a Bash row runs, its bullet turns like Claude Code's spinner glyph and `Bash(` `)` shimmer like the spinner's word, in the same colors; the command keeps its own.
 - While Claude is thinking, the spinner's word is a rainbow that flows faster the faster the thinking streams in. The spinner's timer and token count stay Claude Code's. (The thinking rows in the transcript can't be drawn by a mod.)
-- Bash rows are redrawn only when drawn in full (`"verbose": true`, or ctrl+o). Rows Claude Code adds its own parts to (background tasks, git commits, output saved to a file, output with terminal escapes) stay Claude Code's.
+- Bash rows are redrawn only when drawn in full (`"verbose": true`, or ctrl+o). Rows Claude Code adds its own parts to (background tasks, git commits, output with terminal escapes) stay Claude Code's. An output too large to keep is colored like any other (the part Claude Code kept). A very long line is colored up to 100,000 characters where the language's lexer stays fast (command output, TOML, JSON, YAML, diffs, Python and a few more), 2,000 elsewhere.
 - Read rows aren't colored: Claude Code shows "Read N lines", never the file's text.
 - Tables, quotes and fences in unknown languages stay as Claude Code draws them.
 

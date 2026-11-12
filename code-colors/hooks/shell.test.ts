@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { tokenize, type Lang } from './highlight'
+import { MAX_COLORED_LINE, tokenize, type Lang } from './highlight'
 import { bashRow, commandTokens, EDIT_NOTES, filePrints, grepLines, MAX_COLORED_LINES, outputLang, outputLines, printedText, printSpans, splitCommand } from './shell'
 
 const kinds = (source: string) => tokenize(source, 'bash').filter(token => token.text.trim()).map(token => [token.text.trim(), token.kind])
@@ -77,6 +77,27 @@ test('a plain finished row is ours; running, background, git and escape rows sta
   expect(bashRow(done('x', { gitOperation: { push: { branch: 'main' } } }))).toBeUndefined()
   expect(bashRow(done('\u001b[31mred\u001b[0m'))).toBeUndefined()
   expect(bashRow({ ...done('x'), input: {} })).toBeUndefined()
+})
+
+test('a row whose output was saved to a file, or that ended on an exit-code note, is ours', () => {
+  // The engine draws nothing of its own for either (its Bash result renderer, 2.1.322): the output it kept is all there is.
+  const plain = bashRow(done('x = 1'))
+  expect(plain?.output).toEqual({ lang: 'python', colored: 'x = 1' })
+  expect(bashRow(done('x = 1', { persistedOutputPath: '/p/tool-results/a.txt', persistedOutputSize: 93334 }))).toEqual(plain)
+  expect(bashRow(done('x = 1', { returnCodeInterpretation: 'Files differ' }))).toEqual(plain)
+  // With nothing printed, the engine's one dim line is the note, else "Done" for a command that prints nothing, else "(No output)".
+  const note = (extra: Record<string, unknown>) => bashRow(done('', extra))?.output
+  expect(note({ returnCodeInterpretation: 'No matches found' })).toEqual({ lang: undefined, colored: 'No matches found', color: 'inactive' })
+  expect(note({ returnCodeInterpretation: 'No matches found', noOutputExpected: true })).toEqual({ lang: undefined, colored: 'No matches found', color: 'inactive' })
+  expect(note({ noOutputExpected: true })).toEqual({ lang: undefined, colored: 'Done', color: 'inactive' })
+  expect(note({})).toEqual({ lang: undefined, colored: '(No output)', color: 'inactive' })
+  expect(note({ returnCodeInterpretation: '' })).toEqual({ lang: undefined, colored: '(No output)', color: 'inactive' })
+  // A saved output is cut mid-line where the engine stopped keeping it: still drawn line by line, nothing lost.
+  const cut = bashRow({ ...done('512 notes.md\n66:  { id = "t12", note = "a -> b', { persistedOutputPath: '/p/a.txt', persistedOutputSize: 93334 }), input: { command: 'wc -c notes.md && grep -n k board.toml | head -30' } })
+  expect(cut?.output?.lines?.map(line => line.prefix + line.text).join('\n')).toBe('512 notes.md\n66:  { id = "t12", note = "a -> b')
+  expect(cut?.output?.lines?.[1]).toEqual({ prefix: '66:', lang: 'ini', text: '  { id = "t12", note = "a -> b' })
+  // Rows the engine does add a part to stay its.
+  for (const field of ['backgroundTaskId', 'gitOperation', 'structuredContent', 'timedOutAfterMs', 'backgroundCwdHint', 'rawOutputPath']) expect(bashRow(done('x', { [field]: 'y' }))).toBeUndefined()
 })
 
 test('an errored row draws the text the model read, in the error color', () => {
@@ -430,8 +451,27 @@ test('JSON, `$ command` lines and the cut-offs', () => {
   expect(langs('cat a.jsonl.bak', '{"a": 1}\nb')).toEqual([['', 'json'], ['', 'output']])
   expect(langs('ls', '[section]')).toEqual([['', 'output']])
   expect(outputLines('sh x', '$ pm enable y')).toEqual([{ prefix: '$ ', lang: 'bash', text: 'pm enable y' }])
+  // A very long line is colored where the lexer's cost grows with its length (output, TOML, JSON); past the
+  // limit, or past the short one in a language whose cost grows with the square, it is plain.
   const long = 'x'.repeat(2001)
-  expect(outputLines('ls', long)).toEqual([{ prefix: '', text: long }])
+  expect(outputLines('ls', long)).toEqual([{ prefix: '', lang: 'output', text: long }])
+  const toml = `{ id = "t12", note = "${'word '.repeat(800)}" },`
+  expect(outputLines('wc -c a.md && grep -n k a.toml | head', `1 a.md\n66:${toml}`)).toEqual([{ prefix: '', lang: 'output', text: '1 a.md' }, { prefix: '66:', lang: 'ini', text: toml }])
+  const atLimit = 'x'.repeat(MAX_COLORED_LINE)
+  expect(outputLines('ls', atLimit)).toEqual([{ prefix: '', lang: 'output', text: atLimit }])
+  expect(outputLines('ls', `${atLimit}x`)).toEqual([{ prefix: '', text: `${atLimit}x` }])
+  const script = `echo ${'a '.repeat(1100)}`
+  expect(outputLines('sh x', `$ ${script}`)).toEqual([{ prefix: '$ ', text: script }])
+  expect(outputLines('wc -c a.md && grep -n k a.ts | head', `1 a.md\n66:${long}`)[1]).toEqual({ prefix: '66:', text: long })
+  expect(outputLines('sh x', `$ ${script}\n$ ls`).map(line => line.prefix + line.text).join('\n')).toBe(`$ ${script}\n$ ls`)
+  // A grep's path prefix is looked for where a path can be (4,096 chars), not at every `:` of a very long line.
+  const deep = `${'d/'.repeat(2040)}a.ts`
+  expect(outputLines('ls; grep -rn k d | head', `${deep}:12:const x = 1`)[0]).toEqual({ prefix: `${deep}:12:`, lang: 'ts', text: 'const x = 1' })
+  expect(outputLines('ls; grep -rn k d | head', `${'x'.repeat(5000)}/a.ts:12:const x = 1`)[0]?.lang).toBe('output')
+  const atBound = `${'d/'.repeat(2046)}a.ts` // 4,096 chars: its `:` is the last cut tried
+  expect(atBound.length).toBe(4096)
+  expect(outputLines('ls; grep -rn k d | head', `${atBound}:12:const x = 1`)[0]).toEqual({ prefix: `${atBound}:12:`, lang: 'ts', text: 'const x = 1' })
+  expect(outputLines('ls; grep -rn k d | head', `d${atBound}:12:const x = 1`)[0]?.lang).toBe('output')
   const many = Array.from({ length: MAX_COLORED_LINES + 2 }, (_, i) => `l${i}`)
   const drawn = outputLines('ls', many.join('\n'))
   expect(drawn.length).toBe(MAX_COLORED_LINES + 1)

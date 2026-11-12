@@ -6,7 +6,7 @@
  */
 
 import { diffRows, isHunk, type DiffRow } from './diff'
-import { tokenize, type Token } from './highlight'
+import { colorsLine, tokenize, type Token } from './highlight'
 import { fileLang, langFromPath, type Lang } from './languages'
 
 export type CommandPart = { lang: Lang | undefined; text: string }
@@ -455,25 +455,30 @@ function grepCall(command: string): GrepCall | undefined {
   return call
 }
 
+// No path is longer than this (Linux PATH_MAX), so a cut past it is not a grep's prefix; trying every cut
+// of a very long line would stall a redraw (tools/line-cost.ts).
+const MAX_PATH = 4096
+
 /** `path:12:text` or `path-12-text` (context), or `path:text` when not `numbered`; a path may hold `-` itself, so try each cut. */
 function pathLine(line: string, numbered: boolean): GrepLine | undefined {
-  for (const cut of line.matchAll(/[:-]/g)) {
+  for (const cut of line.slice(0, MAX_PATH + 1).matchAll(/[:-]/g)) {
     const at = cut.index
     const lang = langFromPath(line.slice(0, at))
     if (!lang) continue
-    const sep = line[at]!
-    const rest = line.slice(at + 1)
-    if (!numbered) return { prefix: line.slice(0, at + 1), lang, text: rest }
-    const number = new RegExp(`^(\\d+)\\${sep}`).exec(rest)
-    if (number) return { prefix: line.slice(0, at + 1 + number[0].length), lang, text: rest.slice(number[0].length) }
+    if (!numbered) return { prefix: line.slice(0, at + 1), lang, text: line.slice(at + 1) }
+    // The line number, then the same separator again: read in place, without copying the rest of the line per cut.
+    const number = /\d+[:-]/y
+    number.lastIndex = at + 1
+    const found = number.exec(line)?.[0]
+    if (found?.endsWith(line[at]!)) return { prefix: line.slice(0, at + 1 + found.length), lang, text: line.slice(at + 1 + found.length) }
   }
   return undefined
 }
 
-// A line longer than this is drawn plain: a minified file on one line must not stall a redraw.
-const MAX_COLORED_LINE = 2000
+/** A line in its colors, or plain when it is too long for its language (highlight.ts `colorsLine`); its text is kept either way. */
+const short = (line: GrepLine): GrepLine => (line.lang && !colorsLine(line.text, line.lang) ? { prefix: line.prefix, text: line.text } : line)
 
-const asOutput = (line: string): GrepLine => (line.length > MAX_COLORED_LINE ? { prefix: '', text: line } : { prefix: '', lang: 'output', text: line })
+const asOutput = (line: string): GrepLine => short({ prefix: '', lang: 'output', text: line })
 
 /**
  * A grep's output line by line: the prefix it adds dim, the rest in its file's
@@ -554,8 +559,7 @@ export function outputLines(command: string, stdout: string, position = { sectio
     } catch {}
   }
   let inDiff = false
-  const out = lines.map((line, i): GrepLine => {
-    if (line.length > MAX_COLORED_LINE) return { prefix: '', text: line }
+  const lineOf = (line: string, i: number): GrepLine => {
     if (wholeJson) return { prefix: '', lang: 'json', text: line }
     const echoed = sections.findIndex((section, index) => index > position.section && section.echo === line)
     if (echoed >= 0) {
@@ -581,7 +585,8 @@ export function outputLines(command: string, stdout: string, position = { sectio
     if (line.startsWith('$ ')) return { prefix: '$ ', lang: 'bash', text: line.slice(2) }
     if (/^\s*"[^"\n]*"\s*:/.test(line) || isJsonLine(line)) return { prefix: '', lang: 'json', text: line }
     return asOutput(line)
-  })
+  }
+  const out = lines.map((line, i) => short(lineOf(line, i)))
   return all.length > lines.length ? [...out, { prefix: '', text: all.slice(lines.length).join('\n') }] : out
 }
 
@@ -616,11 +621,11 @@ export type BashRow = {
 }
 
 // Result fields the engine draws something of its own for (a git summary, a
-// background notice, a saved-output note): those rows stay its.
-const ENGINE_DRAWN = [
-  'backgroundTaskId', 'persistedOutputPath', 'gitOperation', 'returnCodeInterpretation',
-  'structuredContent', 'timedOutAfterMs', 'backgroundCwdHint', 'rawOutputPath',
-] as const
+// background notice): those rows stay its. An output saved to a file
+// (`persistedOutputPath`) is not one: the engine draws the part it kept and
+// nothing more (its Bash result renderer, 2.1.322). Nor is an exit-code note
+// (`returnCodeInterpretation`), drawn only in place of "(No output)".
+const ENGINE_DRAWN = ['backgroundTaskId', 'gitOperation', 'structuredContent', 'timedOutAfterMs', 'backgroundCwdHint', 'rawOutputPath'] as const
 
 // The engine's own wording under a Bash row's diff (seen in a capture, 2.1.312).
 export const EDIT_NOTES = {
@@ -693,7 +698,11 @@ export function bashRow(props: { input: unknown; isRunning: boolean; isErrored: 
   const stdout = lf(result['stdout'])
   if (stdout.includes('\u001b')) return undefined
   const row = { bullet: 'success' as const, command: parts, ...(cwdNote ? { cwdNote } : {}), ...diff }
-  if (!stdout) return cwdNote || diff.editNote ? row : { ...row, output: { lang: undefined, colored: '(No output)', color: 'inactive' } }
+  // With nothing printed the engine draws one dim line: the exit code's meaning ("No matches found"), else
+  // "Done" for a command that prints nothing when it works, else "(No output)".
+  const exitNote = typeof result['returnCodeInterpretation'] === 'string' ? result['returnCodeInterpretation'] : ''
+  const emptyNote = exitNote || (result['noOutputExpected'] === true ? 'Done' : '(No output)')
+  if (!stdout) return cwdNote || diff.editNote ? row : { ...row, output: { lang: undefined, colored: emptyNote, color: 'inactive' } }
   const lang = outputLang(command)
   const grep = lang ? undefined : grepLines(command, stdout)
   if (grep) return { ...row, output: { lang: undefined, colored: stdout, grep } }

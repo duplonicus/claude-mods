@@ -141,11 +141,16 @@ test('an Edit to a file of no known language is in the palette too', async ($, o
   await go.unmount()
 })
 
-test('a CRLF file has no stray returns and a very long line stays plain', () => {
+test('a CRLF file has no stray returns and a line too long for its language leaves the file plain', () => {
   expect(readNewFile(created('/r/a.py', 'a = 1\r\nb = 2\r\n'), true)?.total).toBe(2)
   expect(readNewFile(created('/r/a.py', 'a = 1\r\nb = 2\r\n'), true)?.rows[0]?.tokens.map(token => token.text).join('')).toBe('a = 1')
+  // Python's lexer costs in step with a line's length, so a long line is colored; TypeScript's does not (highlight.ts).
   const long = `x = ${'1'.repeat(3000)}`
-  expect(readNewFile(created('/r/a.py', `${long}\n`), true)?.rows[0]?.tokens).toEqual([{ kind: 'plain', text: long }])
+  expect(readNewFile(created('/r/a.py', `${long}\n`), true)?.rows[0]?.tokens.at(-1)).toEqual({ kind: 'number', text: '1'.repeat(3000) })
+  expect(readNewFile(created('/r/a.py', `${long}\n`), true)?.rows[0]?.tokens.map(token => token.text).join('')).toBe(long)
+  expect(readNewFile(created('/r/a.ts', `${long}\ny = 2\n`), true)?.rows.map(row => row.tokens)).toEqual([[{ kind: 'plain', text: long }], [{ kind: 'plain', text: 'y = 2' }]])
+  const tooLong = `x = ${'1'.repeat(100_000)}`
+  expect(readNewFile(created('/r/a.py', `${tooLong}\n`), true)?.rows[0]?.tokens).toEqual([{ kind: 'plain', text: tooLong }])
   const many = Array.from({ length: 302 }, (_, i) => `v${i} = 1`).join('\n')
   const rows = readNewFile(created('/r/a.py', many), true)?.rows
   expect(rows?.length).toBe(302)

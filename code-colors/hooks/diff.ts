@@ -4,7 +4,7 @@
  * and turns it into numbered, tokenized rows for register.tsx to draw.
  */
 
-import { tokenize, toLines, type Lang, type Token } from './highlight'
+import { colorsLine, tokenize, toLines, type Lang, type Token } from './highlight'
 import { fileLang } from './languages'
 
 export type Hunk = { oldStart: number; newStart: number; lines: string[] }
@@ -37,9 +37,9 @@ export function readPatch(output: unknown): Patch | undefined {
 
 // As the engine's row: this many lines in regular mode, then how many more (seen in a capture, 2.1.314).
 const COMPACT_LINES = 10
-// Past this many lines a new file is drawn plain, and with a line this long all of it: neither must stall a redraw.
+// Past this many lines a new file is drawn plain, and with a line too long for its language (highlight.ts
+// `colorsLine`) all of it: neither must stall a redraw.
 const MAX_COLORED_FILE_LINES = 300
-const MAX_COLORED_FILE_LINE = 2000
 
 export type NewFile = { filePath: string; total: number; rows: { lineNo: number; tokens: Token[] }[]; hidden: number }
 
@@ -60,7 +60,7 @@ export function readNewFile(output: unknown, isExpanded: boolean): NewFile | und
   if (lines.at(-1) === '') lines.pop()
   const shown = isExpanded ? lines : lines.slice(0, COMPACT_LINES)
   const colored = shown.slice(0, MAX_COLORED_FILE_LINES)
-  const tokens = colored.some(line => line.length > MAX_COLORED_FILE_LINE) ? [] : toLines(colored.join('\n'), lang)
+  const tokens = colored.some(line => !colorsLine(line, lang)) ? [] : toLines(colored.join('\n'), lang)
   const rows = shown.map((line, i) => ({ lineNo: i + 1, tokens: tokens[i] ?? (line ? [{ kind: 'plain' as const, text: line }] : []) }))
   return { filePath: output.filePath, total: lines.length, rows, hidden: lines.length - shown.length }
 }
